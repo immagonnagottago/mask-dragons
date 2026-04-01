@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Modular Snake</title>
+    <style>
+        body { margin: 0; background: #1a1a1a; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        #arena { width: 600px; height: 600px; background: #222; border: 3px solid #444; position: relative; overflow: hidden; cursor: crosshair; }
+        .segment { 
+            position: absolute; 
+            width: 64px; height: 64px; /* Adjust this to your Piskel size */
+            background-size: contain; 
+            background-repeat: no-repeat;
+            transform-origin: center; 
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="arena"></div>
+    <script>
+        const arena = document.getElementById('arena');
+        const segments = [];
+        const positions = [];
+        const numBody = 10;
+        const total = numBody + 2; 
+        const gap = 20; // Lower this (e.g. 15) for tighter overlap
+
+        for (let i = 0; i < total; i++) {
+            const el = document.createElement('div');
+            el.className = 'segment';
+            if (i === 0) el.style.backgroundImage = "url('head.png')";
+            else if (i === total - 1) el.style.backgroundImage = "url('tail.png')";
+            else el.style.backgroundImage = "url('body.png')";
+            el.style.zIndex = total - i;
+            arena.appendChild(el);
+            segments.push(el);
+            positions.push({ x: 300, y: 300, angle: 0 });
+        }
+
+        let mouse = { x: 300, y: 300 };
+        arena.addEventListener('mousemove', (e) => {
+            const rect = arena.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        });
+
+        function update() {
+            positions[0].x += (mouse.x - positions[0].x) * 0.15;
+            positions[0].y += (mouse.y - positions[0].y) * 0.15;
+            for (let i = 1; i < total; i++) {
+                const leader = positions[i - 1];
+                const follower = positions[i];
+                const dx = leader.x - follower.x;
+                const dy = leader.y - follower.y;
+                const angle = Math.atan2(dy, dx);
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > gap) {
+                    follower.x = leader.x - Math.cos(angle) * gap;
+                    follower.y = leader.y - Math.sin(angle) * gap;
+                    follower.angle = angle;
+                }
+            }
+            segments.forEach((seg, i) => {
+                const p = positions[i];
+                seg.style.left = p.x + 'px';
+                seg.style.top = p.y + 'px';
+                seg.style.transform = `translate(-50%, -50%) rotate(${p.angle}rad)`;
+            });
+            requestAnimationFrame(update);
+        }
+        update();
+    </script>
+</body>
+</html>
