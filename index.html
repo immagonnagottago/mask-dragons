@@ -5,7 +5,11 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #111; overflow: hidden; width: 100vw; height: 100vh; }
-        #canvas { display: block; image-rendering: pixelated; }
+        #canvas {
+            display: block;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
         #hud {
             position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
             color: #fff; font-family: 'Segoe UI', sans-serif; font-size: 18px;
@@ -19,59 +23,72 @@
 <div id="hud">🌸 Nectar: <span id="score">0</span> &nbsp;|&nbsp; Length: <span id="length">12</span></div>
 <script>
 const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-ctx.imageSmoothingEnabled = false;
+const ctx = canvas.getContext('2d', { alpha: false });
 const scoreEl = document.getElementById('score');
 const lengthEl = document.getElementById('length');
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-window.addEventListener('resize', () => {
-    canvas.width = window.innerWidth;
+function setSize() {
+    canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx.imageSmoothingEnabled = false;
-});
+}
+setSize();
+window.addEventListener('resize', setSize);
 
-// ── Images ──────────────────────────────────────────────────────────────────
-const imgHead = new Image(); imgHead.src = 'head.png';
-const imgBody = new Image(); imgBody.src = 'body.png';
-const imgTail = new Image(); imgTail.src = 'tail.png';
+// ── Sprite loader ─────────────────────────────────────────────────────────────
+// Each sprite is baked into a tiny offscreen canvas at its NATIVE pixel size.
+// Drawing an offscreen canvas onto the main canvas with imageSmoothingEnabled=false
+// forces nearest-neighbor interpolation at every scale — crisp pixels guaranteed.
+const sprites = {};
 
-// ── World state ──────────────────────────────────────────────────────────────
-const WORLD = 4000; // world size
-const GRID  = 60;   // grid cell size
+function loadSprite(key, src) {
+    const img = new Image();
+    img.onload = () => {
+        const oc  = document.createElement('canvas');
+        oc.width  = img.naturalWidth;
+        oc.height = img.naturalHeight;
+        const ox  = oc.getContext('2d');
+        ox.imageSmoothingEnabled = false;
+        ox.drawImage(img, 0, 0);
+        sprites[key] = oc;
+    };
+    img.src = src;
+}
+loadSprite('head', 'head.png');
+loadSprite('body', 'body.png');
+loadSprite('tail', 'tail.png');
 
-// ── Snake ────────────────────────────────────────────────────────────────────
-const BASE_SIZE   = 48;   // starting segment pixel size
-const SIZE_PER_EAT = 4;   // px growth per nectar eaten
-let   segSize     = BASE_SIZE;
-let   gap         = segSize * 0.38; // tight overlap so segments connect
+// ── World ─────────────────────────────────────────────────────────────────────
+const WORLD = 4000;
+const GRID  = 60;
+
+// ── Snake ─────────────────────────────────────────────────────────────────────
+const BASE_SIZE    = 48;
+const SIZE_PER_EAT = 4;
+let   segSize      = BASE_SIZE;
+let   gap          = segSize * 0.38;
 
 const NUM_START = 12;
 let positions = [];
-for (let i = 0; i < NUM_START; i++) {
+for (let i = 0; i < NUM_START; i++)
     positions.push({ x: WORLD/2, y: WORLD/2, angle: 0 });
-}
 
-// head target in WORLD space — starts at head position
 let target = { x: WORLD/2, y: WORLD/2 };
 
-// ── Mouse → world target ─────────────────────────────────────────────────────
-// The head is always at screen centre. Mouse offset = direction the head moves.
+// ── Input ─────────────────────────────────────────────────────────────────────
 let mouse = { x: canvas.width/2, y: canvas.height/2 };
 canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-// Touch support
 canvas.addEventListener('touchmove', e => {
     e.preventDefault();
     mouse.x = e.touches[0].clientX;
     mouse.y = e.touches[0].clientY;
 }, { passive: false });
 
-// ── Nectar ───────────────────────────────────────────────────────────────────
-let nectars = [];
-let score = 0;
+// ── Nectar ────────────────────────────────────────────────────────────────────
 const NECTAR_COUNT = 40;
-const NECTAR_R = 10;
+const NECTAR_R     = 10;
+let   nectars      = [];
+let   score        = 0;
 
 function spawnNectar() {
     return {
@@ -84,22 +101,18 @@ function spawnNectar() {
 }
 for (let i = 0; i < NECTAR_COUNT; i++) nectars.push(spawnNectar());
 
-// ── Grow ─────────────────────────────────────────────────────────────────────
 function eatNectar() {
     score++;
     scoreEl.textContent = score;
-    // grow size
     segSize += SIZE_PER_EAT;
     gap = segSize * 0.38;
-    // add 2 segments at tail
     const tail = positions[positions.length - 1];
     positions.push({ x: tail.x, y: tail.y, angle: tail.angle });
     positions.push({ x: tail.x, y: tail.y, angle: tail.angle });
     lengthEl.textContent = positions.length;
 }
 
-// ── Camera ───────────────────────────────────────────────────────────────────
-// Camera is always centred on the head segment
+// ── Camera ────────────────────────────────────────────────────────────────────
 function worldToScreen(wx, wy) {
     const head = positions[0];
     return {
@@ -108,33 +121,27 @@ function worldToScreen(wx, wy) {
     };
 }
 
-// ── Draw grid ────────────────────────────────────────────────────────────────
+// ── Draw grid ─────────────────────────────────────────────────────────────────
 function drawGrid() {
     const head = positions[0];
-    const offX = (canvas.width/2)  - head.x;
-    const offY = (canvas.height/2) - head.y;
-
-    // Starting world coords for the visible grid
+    const offX = canvas.width/2  - head.x;
+    const offY = canvas.height/2 - head.y;
     const startWX = Math.floor(-offX / GRID) * GRID;
     const startWY = Math.floor(-offY / GRID) * GRID;
 
     ctx.strokeStyle = 'rgba(255,255,255,0.07)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-
     for (let wx = startWX; wx < -offX + canvas.width + GRID; wx += GRID) {
         const sx = wx + offX;
-        ctx.moveTo(sx, 0);
-        ctx.lineTo(sx, canvas.height);
+        ctx.moveTo(sx, 0); ctx.lineTo(sx, canvas.height);
     }
     for (let wy = startWY; wy < -offY + canvas.height + GRID; wy += GRID) {
         const sy = wy + offY;
-        ctx.moveTo(0, sy);
-        ctx.lineTo(canvas.width, sy);
+        ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy);
     }
     ctx.stroke();
 
-    // World border
     const tl = worldToScreen(0, 0);
     const br = worldToScreen(WORLD, WORLD);
     ctx.strokeStyle = 'rgba(255,80,80,0.4)';
@@ -142,70 +149,65 @@ function drawGrid() {
     ctx.strokeRect(tl.sx, tl.sy, br.sx - tl.sx, br.sy - tl.sy);
 }
 
-// ── Draw segment ─────────────────────────────────────────────────────────────
-function drawSegment(img, wx, wy, angle, size) {
+// ── Draw segment ──────────────────────────────────────────────────────────────
+function drawSegment(spriteKey, wx, wy, angle, size) {
+    const spr = sprites[spriteKey];
+    if (!spr) return;
     const { sx, sy } = worldToScreen(wx, wy);
+    const s = Math.round(size);
+
     ctx.save();
-    ctx.translate(sx, sy);
-    ctx.rotate(angle); // atan2 angle — adjust offset below if sprites face wrong direction
-    ctx.drawImage(img, -size/2, -size/2, size, size);
+    ctx.translate(Math.round(sx), Math.round(sy));
+    ctx.rotate(angle);
+    ctx.imageSmoothingEnabled = false;   // re-assert inside save/restore
+    ctx.drawImage(spr, -s/2, -s/2, s, s);
     ctx.restore();
 }
 
-// ── Draw nectar ──────────────────────────────────────────────────────────────
-function drawNectar(n, t) {
+// ── Draw nectar ───────────────────────────────────────────────────────────────
+function drawNectar(n) {
     const { sx, sy } = worldToScreen(n.x, n.y);
-    // cull offscreen
-    if (sx < -30 || sx > canvas.width+30 || sy < -30 || sy > canvas.height+30) return;
+    if (sx < -40 || sx > canvas.width+40 || sy < -40 || sy > canvas.height+40) return;
     n.pulse += 0.05;
     const r = n.r + Math.sin(n.pulse) * 3;
-    const grd = ctx.createRadialGradient(sx, sy, 0, sx, sy, r*2.5);
+    const grd = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 2.5);
     grd.addColorStop(0, `hsla(${n.hue},100%,80%,1)`);
     grd.addColorStop(1, `hsla(${n.hue},100%,50%,0)`);
     ctx.beginPath();
-    ctx.arc(sx, sy, r*2.5, 0, Math.PI*2);
+    ctx.arc(sx, sy, r * 2.5, 0, Math.PI * 2);
     ctx.fillStyle = grd;
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(sx, sy, r, 0, Math.PI*2);
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
     ctx.fillStyle = `hsl(${n.hue},100%,75%)`;
     ctx.fill();
 }
 
-// ── Main loop ────────────────────────────────────────────────────────────────
+// ── Main loop ─────────────────────────────────────────────────────────────────
 let lastTime = 0;
 function loop(ts) {
-    const dt = Math.min((ts - lastTime) / 16.67, 3); // normalise to ~60fps
+    const dt = Math.min((ts - lastTime) / 16.67, 3);
     lastTime = ts;
 
-    // ── Move target in world space ──
-    // The screen centre is where the head lives.
-    // The mouse offset from centre is the direction to pull the target.
     const cx = canvas.width/2, cy = canvas.height/2;
     const dx = mouse.x - cx, dy = mouse.y - cy;
     const dist = Math.sqrt(dx*dx + dy*dy);
-    const speed = 3.5 * dt;
     if (dist > 5) {
-        target.x = positions[0].x + (dx/dist) * speed * 10;
-        target.y = positions[0].y + (dy/dist) * speed * 10;
+        const speed = 35 * dt;
+        target.x = positions[0].x + (dx / dist) * speed;
+        target.y = positions[0].y + (dy / dist) * speed;
     }
-
-    // clamp target to world
     target.x = Math.max(0, Math.min(WORLD, target.x));
     target.y = Math.max(0, Math.min(WORLD, target.y));
 
-    // ── Update head ──
     positions[0].x += (target.x - positions[0].x) * 0.18 * dt;
     positions[0].y += (target.y - positions[0].y) * 0.18 * dt;
 
-    // update head angle toward target
     const hdx = target.x - positions[0].x;
     const hdy = target.y - positions[0].y;
-    if (Math.abs(hdx) + Math.abs(hdy) > 0.5) {
+    if (Math.abs(hdx) + Math.abs(hdy) > 0.5)
         positions[0].angle = Math.atan2(hdy, hdx);
-    }
 
-    // ── Chain followers ──
     for (let i = 1; i < positions.length; i++) {
         const leader   = positions[i-1];
         const follower = positions[i];
@@ -220,10 +222,9 @@ function loop(ts) {
         follower.angle = ang;
     }
 
-    // ── Check nectar collision ──
     const head = positions[0];
     const eatR = segSize * 0.5;
-    for (let i = nectars.length-1; i >= 0; i--) {
+    for (let i = nectars.length - 1; i >= 0; i--) {
         const n = nectars[i];
         const edx = head.x - n.x, edy = head.y - n.y;
         if (Math.sqrt(edx*edx + edy*edy) < eatR + n.r) {
@@ -234,31 +235,20 @@ function loop(ts) {
     }
 
     // ── Draw ──
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#141414';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     drawGrid();
+    nectars.forEach(n => drawNectar(n));
 
-    // Nectar
-    nectars.forEach(n => drawNectar(n, ts));
-
-    // Snake — draw tail first, then body, then head (back to front)
     const total = positions.length;
-    for (let i = total-1; i >= 0; i--) {
+    for (let i = total - 1; i >= 0; i--) {
         const p = positions[i];
-        let img, sz;
-        if (i === 0) {
-            img = imgHead;
-            sz  = segSize * 1.15; // head slightly bigger
-        } else if (i === total-1) {
-            img = imgTail;
-            sz  = segSize * 0.75;
-        } else {
-            img = imgBody;
-            sz  = segSize;
-        }
-        drawSegment(img, p.x, p.y, p.angle, sz);
+        let key, sz;
+        if (i === 0)            { key = 'head'; sz = segSize * 1.15; }
+        else if (i === total-1) { key = 'tail'; sz = segSize * 0.75; }
+        else                    { key = 'body'; sz = segSize; }
+        drawSegment(key, p.x, p.y, p.angle, sz);
     }
 
     requestAnimationFrame(loop);
