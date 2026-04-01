@@ -45,7 +45,7 @@ const GRID  = 60;   // grid cell size
 const BASE_SIZE   = 48;   // starting segment pixel size
 const SIZE_PER_EAT = 4;   // px growth per nectar eaten
 let   segSize     = BASE_SIZE;
-let   gap         = segSize * 0.55; // spacing between segment centres
+let   gap         = segSize * 0.38; // tight overlap so segments connect
 
 const NUM_START = 12;
 let positions = [];
@@ -90,7 +90,7 @@ function eatNectar() {
     scoreEl.textContent = score;
     // grow size
     segSize += SIZE_PER_EAT;
-    gap = segSize * 0.55;
+    gap = segSize * 0.38;
     // add 2 segments at tail
     const tail = positions[positions.length - 1];
     positions.push({ x: tail.x, y: tail.y, angle: tail.angle });
@@ -147,7 +147,7 @@ function drawSegment(img, wx, wy, angle, size) {
     const { sx, sy } = worldToScreen(wx, wy);
     ctx.save();
     ctx.translate(sx, sy);
-    ctx.rotate(angle + Math.PI/2); // sprites face up, rotate to face direction
+    ctx.rotate(angle); // atan2 angle — adjust offset below if sprites face wrong direction
     ctx.drawImage(img, -size/2, -size/2, size, size);
     ctx.restore();
 }
