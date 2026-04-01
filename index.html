@@ -42,11 +42,23 @@
             const rect = arena.getBoundingClientRect();
             mouse.x = e.clientX - rect.left;
             mouse.y = e.clientY - rect.top;
+            
         });
+function update() {
+            // 1. Calculate the angle from the head to the mouse
+            const hdx = mouse.x - positions[0].x;
+            const hdy = mouse.y - positions[0].y;
+            
+            // Only update the angle if the mouse is moving (to avoid flickering)
+            if (Math.abs(hdx) > 1 || Math.abs(hdy) > 1) {
+                positions[0].angle = Math.atan2(hdy, hdx);
+            }
 
-        function update() {
-            positions[0].x += (mouse.x - positions[0].x) * 0.15;
-            positions[0].y += (mouse.y - positions[0].y) * 0.15;
+            // 2. Move the head toward the mouse
+            positions[0].x += hdx * 0.15;
+            positions[0].y += hdy * 0.15;
+
+            // 3. Everything else follows (existing code)
             for (let i = 1; i < total; i++) {
                 const leader = positions[i - 1];
                 const follower = positions[i];
@@ -54,12 +66,14 @@
                 const dy = leader.y - follower.y;
                 const angle = Math.atan2(dy, dx);
                 const dist = Math.sqrt(dx * dx + dy * dy);
+
                 if (dist > gap) {
                     follower.x = leader.x - Math.cos(angle) * gap;
                     follower.y = leader.y - Math.sin(angle) * gap;
                     follower.angle = angle;
                 }
             }
+
             segments.forEach((seg, i) => {
                 const p = positions[i];
                 seg.style.left = p.x + 'px';
