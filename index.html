@@ -19,18 +19,30 @@
     <div id="arena"></div>
     <script>
         const arena = document.getElementById('arena');
+        
+        // --- THE SNAKE LIBRARY ---
+        // Just change the "currentSkin" name to swap snakes!
+        const skins = {
+            "dragon": { head: 'head.png', body: 'body.png', tail: 'tail.png', length: 10, gap: 20 },
+            "forest": { head: 'f_head.png', body: 'f_body.png', tail: 'f_tail.png', length: 15, gap: 15 },
+            "lava":   { head: 'l_head.png', body: 'l_body.png', tail: 'l_tail.png', length: 8, gap: 25 }
+        };
+
+        const currentSkin = skins["dragon"]; // Change "dragon" to "forest" to swap!
+
         const segments = [];
         const positions = [];
-        const numBody = 10;
-        const total = numBody + 2; 
-        const gap = 20; // Lower this (e.g. 15) for tighter overlap
+        const total = currentSkin.length + 2; 
 
+        // Initialize based on the chosen skin
         for (let i = 0; i < total; i++) {
             const el = document.createElement('div');
             el.className = 'segment';
-            if (i === 0) el.style.backgroundImage = "url('head.png')";
-            else if (i === total - 1) el.style.backgroundImage = "url('tail.png')";
-            else el.style.backgroundImage = "url('body.png')";
+            
+            if (i === 0) el.style.backgroundImage = `url('${currentSkin.head}')`;
+            else if (i === total - 1) el.style.backgroundImage = `url('${currentSkin.tail}')`;
+            else el.style.backgroundImage = `url('${currentSkin.body}')`;
+            
             el.style.zIndex = total - i;
             arena.appendChild(el);
             segments.push(el);
@@ -42,23 +54,17 @@
             const rect = arena.getBoundingClientRect();
             mouse.x = e.clientX - rect.left;
             mouse.y = e.clientY - rect.top;
-            
         });
-function update() {
-            // 1. Calculate the angle from the head to the mouse
+
+        function update() {
             const hdx = mouse.x - positions[0].x;
             const hdy = mouse.y - positions[0].y;
-            
-            // Only update the angle if the mouse is moving (to avoid flickering)
             if (Math.abs(hdx) > 1 || Math.abs(hdy) > 1) {
                 positions[0].angle = Math.atan2(hdy, hdx);
             }
-
-            // 2. Move the head toward the mouse
             positions[0].x += hdx * 0.15;
             positions[0].y += hdy * 0.15;
 
-            // 3. Everything else follows (existing code)
             for (let i = 1; i < total; i++) {
                 const leader = positions[i - 1];
                 const follower = positions[i];
@@ -67,9 +73,9 @@ function update() {
                 const angle = Math.atan2(dy, dx);
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
-                if (dist > gap) {
-                    follower.x = leader.x - Math.cos(angle) * gap;
-                    follower.y = leader.y - Math.sin(angle) * gap;
+                if (dist > currentSkin.gap) {
+                    follower.x = leader.x - Math.cos(angle) * currentSkin.gap;
+                    follower.y = leader.y - Math.sin(angle) * currentSkin.gap;
                     follower.angle = angle;
                 }
             }
