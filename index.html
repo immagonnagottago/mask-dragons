@@ -144,27 +144,156 @@ function worldToScreen(wx, wy) {
     };
 }
 
-// ── Draw grid ─────────────────────────────────────────────────────────────────
+// ── Seeded RNG (mulberry32) ───────────────────────────────────────────────────
+// Same seed = identical arena every single load, forever.
+function makeRng(seed) {
+    return function() {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+}
+const TILE_SEED = 0xA2C7E3F1; // fixed forever
+const tileRng   = makeRng(TILE_SEED);
+
+// ── Stone tile variants ───────────────────────────────────────────────────────
+// Each tile is a 16×16 offscreen canvas drawn once at startup.
+// We stamp them tiled across the world — seeded per-cell choice + rotation.
+const TILE_SIZE = 64; // world units per tile (matches GRID)
+const TILE_PX   = 32; // pixel resolution of each tile canvas
+
+// Palette: dark stone with variation
+const STONE_PALETTES = [
+    // base, crack, highlight, mortar
+    ['#3a3328','#2a241c','#4a4438','#1e1a14'],
+    ['#3d3530','#2d2820','#4d453e','#201c18'],
+    ['#363030','#26211c','#46403a','#1c1814'],
+    ['#3a3530','#2a2620','#4a443e','#201c16'],
+];
+
+function drawTileToCanvas(variant, rotation) {
+    const oc = document.createElement('canvas');
+    oc.width = oc.height = TILE_PX;
+    const ox = oc.getContext('2d');
+    ox.imageSmoothingEnabled = false;
+
+    const pal = STONE_PALETTES[variant % STONE_PALETTES.length];
+    const P = TILE_PX;
+
+    // Base stone fill
+    ox.fillStyle = pal[0];
+    ox.fillRect(0, 0, P, P);
+
+    // Mortar border (2px)
+    ox.fillStyle = pal[3];
+    ox.fillRect(0, 0, P, 2);
+    ox.fillRect(0, P-2, P, 2);
+    ox.fillRect(0, 0, 2, P);
+    ox.fillRect(P-2, 0, 2, P);
+
+    // Inner bevel highlight (top-left)
+    ox.fillStyle = pal[2];
+    ox.fillRect(2, 2, P-4, 2);
+    ox.fillRect(2, 2, 2, P-4);
+
+    // Inner shadow (bottom-right)
+    ox.fillStyle = pal[1];
+    ox.fillRect(2, P-4, P-4, 2);
+    ox.fillRect(P-4, 2, 2, P-4);
+
+    // Variant-specific surface detail
+    ox.fillStyle = pal[1];
+    if (variant === 0) {
+        // Diagonal crack
+        for (let i = 4; i < P-4; i++) {
+            ox.fillRect(i, 4 + Math.floor(i * 0.5) % (P-8), 1, 1);
+        }
+    } else if (variant === 1) {
+        // Horizontal crack
+        ox.fillRect(4, Math.floor(P/2), P-8, 1);
+        ox.fillRect(6, Math.floor(P/2)+1, P-12, 1);
+    } else if (variant === 2) {
+        // Two short cracks
+        ox.fillRect(4, 8, 8, 1);
+        ox.fillRect(P-12, P-10, 8, 1);
+    } else if (variant === 3) {
+        // Pitted surface dots
+        for (let i = 0; i < 5; i++) {
+            const px = 5 + (i * 7) % (P-10);
+            const py = 5 + (i * 11) % (P-10);
+            ox.fillRect(px, py, 2, 2);
+        }
+    } else if (variant === 4) {
+        // Cross crack
+        ox.fillRect(Math.floor(P/2), 4, 1, P-8);
+        ox.fillRect(4, Math.floor(P/2), P-8, 1);
+    } else {
+        // Clean stone (no detail)
+    }
+
+    // Rotate canvas if needed
+    if (rotation === 0) return oc;
+    const rc = document.createElement('canvas');
+    rc.width = rc.height = TILE_PX;
+    const rx = rc.getContext('2d');
+    rx.imageSmoothingEnabled = false;
+    rx.translate(TILE_PX/2, TILE_PX/2);
+    rx.rotate(rotation * Math.PI/2);
+    rx.drawImage(oc, -TILE_PX/2, -TILE_PX/2);
+    return rc;
+}
+
+// Pre-bake all variant×rotation combos (6 variants × 4 rotations = 24 canvases)
+const NUM_VARIANTS = 6;
+const tileCanvases = [];
+for (let v = 0; v < NUM_VARIANTS; v++) {
+    tileCanvases[v] = [];
+    for (let r = 0; r < 4; r++) {
+        tileCanvases[v][r] = drawTileToCanvas(v, r);
+    }
+}
+
+// ── Per-cell tile assignment (seeded, fixed forever) ─────────────────────────
+const COLS = Math.ceil(WORLD / TILE_SIZE);
+const ROWS = Math.ceil(WORLD / TILE_SIZE);
+const tileMap = new Uint8Array(COLS * ROWS); // packed: variant*4 + rotation
+for (let i = 0; i < tileMap.length; i++) {
+    const v = Math.floor(tileRng() * NUM_VARIANTS);
+    const r = Math.floor(tileRng() * 4);
+    tileMap[i] = v * 4 + r;
+}
+
+// ── Draw arena ────────────────────────────────────────────────────────────────
 function drawGrid() {
-    const head = positions[0]; // head is always positions[0]
-    const scaledGrid = GRID * zoom;
-    // Screen offset of world origin
-    const originSX = canvas.width/2  - head.x * zoom;
-    const originSY = canvas.height/2 - head.y * zoom;
-    const startSX = ((originSX % scaledGrid) + scaledGrid) % scaledGrid;
-    const startSY = ((originSY % scaledGrid) + scaledGrid) % scaledGrid;
+    const head = positions[0];
+    const scaledTile = TILE_SIZE * zoom;
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.07)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let sx = startSX; sx < canvas.width + scaledGrid; sx += scaledGrid) {
-        ctx.moveTo(sx, 0); ctx.lineTo(sx, canvas.height);
-    }
-    for (let sy = startSY; sy < canvas.height + scaledGrid; sy += scaledGrid) {
-        ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy);
-    }
-    ctx.stroke();
+    // World pixel of top-left screen corner
+    const viewLeft = head.x - canvas.width  / (2 * zoom);
+    const viewTop  = head.y - canvas.height / (2 * zoom);
 
+    // First tile col/row visible
+    const colStart = Math.max(0, Math.floor(viewLeft / TILE_SIZE));
+    const rowStart = Math.max(0, Math.floor(viewTop  / TILE_SIZE));
+    const colEnd   = Math.min(COLS-1, Math.ceil((viewLeft + canvas.width  / zoom) / TILE_SIZE));
+    const rowEnd   = Math.min(ROWS-1, Math.ceil((viewTop  + canvas.height / zoom) / TILE_SIZE));
+
+    for (let row = rowStart; row <= rowEnd; row++) {
+        for (let col = colStart; col <= colEnd; col++) {
+            const packed = tileMap[row * COLS + col];
+            const v = Math.floor(packed / 4);
+            const r = packed % 4;
+            const tc = tileCanvases[v][r];
+            const { sx, sy } = worldToScreen(col * TILE_SIZE, row * TILE_SIZE);
+            // +1 overlap to avoid sub-pixel gaps between tiles
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(tc, Math.floor(sx), Math.floor(sy),
+                          Math.ceil(scaledTile) + 1, Math.ceil(scaledTile) + 1);
+        }
+    }
+
+    // World border
     const tl = worldToScreen(0, 0);
     const br = worldToScreen(WORLD, WORLD);
     ctx.strokeStyle = 'rgba(255,80,80,0.4)';
