@@ -375,7 +375,8 @@ function loop(ts) {
 }
 
 function safeLoop(ts) {
-    try { loop(ts); } catch(e) { console.error(e); requestAnimationFrame(safeLoop); }
+    try { loop(ts); } catch(e) { console.error(e); }
+    requestAnimationFrame(safeLoop);
 }
 requestAnimationFrame(safeLoop);
 </script>
