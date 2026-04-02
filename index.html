@@ -228,7 +228,7 @@ function loop(ts) {
         // Tightest loop radius = 1.5× gap (just wider than snake body in world units)
         // maxTurn = SPEED / turnRadius — scales with size automatically via gap
         const turnRadius = gap * 1.5;
-        const maxTurn = (SPEED / turnRadius) * dt;
+        const maxTurn = SPEED / turnRadius; // fixed per frame, not dt-scaled
 
         // Shortest angular delta (handles 180° wrap)
         let delta = desiredAngle - positions[0].angle;
