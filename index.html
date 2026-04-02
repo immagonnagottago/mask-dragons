@@ -225,10 +225,10 @@ function loop(ts) {
         // Desired angle toward mouse
         const desiredAngle = Math.atan2(dy, dx);
 
-        // Turn radius is always just wide enough to loop without crossing self.
-        // r = SPEED / maxTurn  →  set r = segSize * 0.6  →  maxTurn = SPEED / (segSize * 0.6)
-        // This scales automatically with size so the loop tightness stays proportional forever.
-        const maxTurn = (SPEED / (segSize * 0.6)) * dt;
+        // Tightest loop radius = 1.5× gap (just wider than snake body in world units)
+        // maxTurn = SPEED / turnRadius — scales with size automatically via gap
+        const turnRadius = gap * 1.5;
+        const maxTurn = (SPEED / turnRadius) * dt;
 
         // Shortest angular delta (handles 180° wrap)
         let delta = desiredAngle - positions[0].angle;
