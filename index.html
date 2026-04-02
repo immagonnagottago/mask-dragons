@@ -124,7 +124,13 @@ function eatNectar() {
     scoreEl.textContent = score;
     segSize += SIZE_PER_EAT;
     gap = segSize * 0.38;
-    pendingGrowth += 2; // queue 2 segments — they'll appear naturally at the tail
+    // Freeze tail for enough frames that 2 full segment-lengths of trail open up
+    const sps = Math.max(1, Math.round(gap / SPEED));
+    pendingGrowth += 2 * sps;
+    // Also actually add the 2 segments now — they'll read frozen trail until growth drains
+    positions.push({ x: 0, y: 0, angle: 0 });
+    positions.push({ x: 0, y: 0, angle: 0 });
+    numSegments += 2;
     lengthEl.textContent = numSegments + pendingGrowth;
     // Zoom out proportionally past ZOOM_START_LENGTH
     const len = positions.length;
@@ -327,16 +333,17 @@ function loop(ts) {
 
     const SAMPLES_PER_SEG = Math.max(1, Math.round(gap / SPEED));
 
-    // ── Grow tail naturally — one segment per frame from queue ──
-    if (pendingGrowth > 0) {
-        positions.push({ x: 0, y: 0, angle: 0 });
-        numSegments++;
-        pendingGrowth--;
-    }
+    // ── Grow tail: freeze tail, extend body out from head ──
+    // pendingGrowth counts extra trail samples the tail should NOT advance.
+    // Each frame we consume one — tail stays put, rest of body stretches naturally.
+    if (pendingGrowth > 0) pendingGrowth--;
 
     // ── Place each segment at its fixed distance back along the trail ──
+    // Tail segment reads from (numSegments-1 * SAMPLES_PER_SEG + pendingGrowth) back
+    // so it stays frozen while pendingGrowth drains down to zero.
     for (let i = 1; i < numSegments; i++) {
-        const idx = ((trailHead - i * SAMPLES_PER_SEG) % MAX_TRAIL + MAX_TRAIL) % MAX_TRAIL;
+        const freeze = (i === numSegments - 1) ? pendingGrowth : 0;
+        const idx = ((trailHead - i * SAMPLES_PER_SEG - freeze) % MAX_TRAIL + MAX_TRAIL) % MAX_TRAIL;
         positions[i].x     = trail[idx].x;
         positions[i].y     = trail[idx].y;
         positions[i].angle = trail[idx].angle;
