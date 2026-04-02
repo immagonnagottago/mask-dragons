@@ -146,6 +146,14 @@ canvas.addEventListener('touchmove', e => {
     mouseY = e.touches[0].clientY;
 }, { passive: false });
 
+// ── Boost ────────────────────────────────────────────────────────────────────
+let boosting = false;
+let boostGlow = 0; // 0-1 glow intensity, lerps smoothly
+canvas.addEventListener('mousedown', () => boosting = true);
+canvas.addEventListener('mouseup',   () => boosting = false);
+canvas.addEventListener('touchstart', () => boosting = true);
+canvas.addEventListener('touchend',   () => boosting = false);
+
 // ── Nectar ────────────────────────────────────────────────────────────────────
 const NECTAR_COUNT = 40;
 let nectars = [];
@@ -246,20 +254,31 @@ function loop(ts) {
     // Zoom lerp
     zoom += (zoomTarget - zoom) * 0.05;
 
+    // ── Boost ──
+    const BOOST_MULT = 2.2;
+    const BOOST_DRAIN = 0.012; // nectar lost per frame while boosting
+    boostGlow += ((boosting ? 1 : 0) - boostGlow) * 0.15;
+    if (boosting && score > 0) {
+        score = Math.max(0, score - BOOST_DRAIN);
+        scoreEl.textContent = Math.floor(score);
+        if (score <= 0) boosting = false;
+    }
+    const currentSpeed = SPEED * (boosting ? BOOST_MULT : 1);
+
     // ── Steer head ──
     const cx = canvas.width/2, cy = canvas.height/2;
     const dx = mouseX - cx, dy = mouseY - cy;
     const dist = Math.sqrt(dx*dx + dy*dy);
     if (dist > 5) {
         const desired = Math.atan2(dy, dx);
-        const maxTurn = SPEED / (gap * 0.4);
+        const maxTurn = currentSpeed / (gap * 0.4);
         let delta = desired - headAngle;
         while (delta >  Math.PI) delta -= Math.PI*2;
         while (delta < -Math.PI) delta += Math.PI*2;
         headAngle += Math.max(-maxTurn, Math.min(maxTurn, delta)) * dt;
     }
-    headX = Math.max(0, Math.min(WORLD, headX + Math.cos(headAngle) * SPEED * dt));
-    headY = Math.max(0, Math.min(WORLD, headY + Math.sin(headAngle) * SPEED * dt));
+    headX = Math.max(0, Math.min(WORLD, headX + Math.cos(headAngle) * currentSpeed * dt));
+    headY = Math.max(0, Math.min(WORLD, headY + Math.sin(headAngle) * currentSpeed * dt));
 
     // ── Write head to trail ──
     trailHead = (trailHead + 1) % MAX_TRAIL;
@@ -304,6 +323,16 @@ function loop(ts) {
         }
         const key = i === 0 ? 'head' : i === numSegs-1 ? 'tail' : 'body';
         const sz  = i === 0 ? segSize*1.15 : i === numSegs-1 ? segSize*0.75 : segSize;
+        // Glow behind head when boosting
+        if (i === 0 && boostGlow > 0.01) {
+            const { sx, sy } = worldToScreen(wx, wy);
+            const glowR = sz * zoom * 1.2;
+            const grd = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
+            grd.addColorStop(0, `rgba(80,180,255,${0.7 * boostGlow})`);
+            grd.addColorStop(1, `rgba(80,180,255,0)`);
+            ctx.beginPath(); ctx.arc(sx, sy, glowR, 0, Math.PI*2);
+            ctx.fillStyle = grd; ctx.fill();
+        }
         drawSegment(key, wx, wy, wa, sz);
     }
 
