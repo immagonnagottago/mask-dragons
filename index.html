@@ -223,10 +223,16 @@ function drawGrid() {
             const r = packed % 4;
             const tc = tileCanvases[v][r];
             const { sx, sy } = worldToScreen(col * TILE_SIZE, row * TILE_SIZE);
-            // +1 overlap to avoid sub-pixel gaps between tiles
             ctx.imageSmoothingEnabled = false;
-            ctx.drawImage(tc, Math.floor(sx), Math.floor(sy),
-                          Math.ceil(scaledTile) + 1, Math.ceil(scaledTile) + 1);
+            if (tc) {
+                ctx.drawImage(tc, Math.floor(sx), Math.floor(sy),
+                              Math.ceil(scaledTile) + 1, Math.ceil(scaledTile) + 1);
+            } else {
+                // Tile not loaded yet — fill with dark stone colour
+                ctx.fillStyle = '#3a3328';
+                ctx.fillRect(Math.floor(sx), Math.floor(sy),
+                             Math.ceil(scaledTile) + 1, Math.ceil(scaledTile) + 1);
+            }
         }
     }
 
@@ -358,9 +364,13 @@ function loop(ts) {
         drawSegment(key, p.x, p.y, p.angle, sz);
     }
 
-    requestAnimationFrame(loop);
+    requestAnimationFrame(safeLoop);
 }
-requestAnimationFrame(loop);
+
+function safeLoop(ts) {
+    try { loop(ts); } catch(e) { console.error(e); requestAnimationFrame(safeLoop); }
+}
+requestAnimationFrame(safeLoop);
 </script>
 </body>
 </html>
