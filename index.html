@@ -87,7 +87,7 @@ const MAX_TRAIL = 20000;
 for (let i = 0; i < MAX_TRAIL; i++) trail.push({ x: WORLD/2, y: WORLD/2, angle: 0 });
 
 let numSegments = NUM_START; // total segment count (grows on eat)
-let tailDebt = 0; // extra samples to hold the tail back by (drains 1/frame)
+let targetSegments = NUM_START; // grow toward this, one segment per frame
 // positions array still used for drawing — filled from trail each frame
 let positions = [];
 for (let i = 0; i < numSegments; i++)
@@ -124,14 +124,8 @@ function eatNectar() {
     scoreEl.textContent = score;
     segSize += SIZE_PER_EAT;
     gap = segSize * 0.38;
-    // Add segments at current tail position so they don't flash from world origin
-    const sps = Math.max(1, Math.round(gap / SPEED));
-    tailDebt += 2 * sps;
-    const tail = positions[numSegments - 1];
-    positions.push({ x: tail.x, y: tail.y, angle: tail.angle });
-    positions.push({ x: tail.x, y: tail.y, angle: tail.angle });
-    numSegments += 2;
-    lengthEl.textContent = numSegments;
+    targetSegments += 2;
+    lengthEl.textContent = targetSegments;
     // Zoom out proportionally past ZOOM_START_LENGTH
     const len = positions.length;
     if (len > ZOOM_START_LENGTH) {
@@ -333,21 +327,20 @@ function loop(ts) {
 
     const SAMPLES_PER_SEG = Math.max(1, Math.round(gap / SPEED));
 
+    // ── Grow one segment per frame toward targetSegments ──
+    if (numSegments < targetSegments) {
+        const t = positions[numSegments - 1];
+        positions.push({ x: t.x, y: t.y, angle: t.angle });
+        numSegments++;
+    }
+
     // ── Place each segment at its fixed distance back along the trail ──
-    // tailDebt offsets every segment's trail lookup equally, holding the whole
-    // tail end back. It drains 1 per frame so the tail catches up gradually.
-    // tailDebt holds the tail back — all segments beyond the original length
-    // read from the same clamped index as the tail, so they sit still while debt drains.
-    const tailIdx = ((trailHead - (numSegments - 1) * SAMPLES_PER_SEG) % MAX_TRAIL + MAX_TRAIL) % MAX_TRAIL;
     for (let i = 1; i < numSegments; i++) {
-        const naturalIdx = ((trailHead - i * SAMPLES_PER_SEG + tailDebt) % MAX_TRAIL + MAX_TRAIL) % MAX_TRAIL;
-        // Clamp so tail segments never read further back than the tail
-        const idx = tailDebt > 0 && i > numSegments - 3 ? tailIdx : naturalIdx;
+        const idx = ((trailHead - i * SAMPLES_PER_SEG) % MAX_TRAIL + MAX_TRAIL) % MAX_TRAIL;
         positions[i].x     = trail[idx].x;
         positions[i].y     = trail[idx].y;
         positions[i].angle = trail[idx].angle;
     }
-    if (tailDebt > 0) tailDebt--;
 
     const head = positions[0]; // head is always positions[0]
     const eatR = segSize * 0.5;
