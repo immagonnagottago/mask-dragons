@@ -137,9 +137,12 @@ function eatNectar() {
 // ── Camera ────────────────────────────────────────────────────────────────────
 function worldToScreen(wx, wy) {
     const head = positions[0]; // head is always positions[0]
+    // Snap camera origin to whole pixels — tiles always land on exact boundaries, no jitter
+    const camX = Math.round(canvas.width/2  - head.x * zoom);
+    const camY = Math.round(canvas.height/2 - head.y * zoom);
     return {
-        sx: canvas.width/2  + (wx - head.x) * zoom,
-        sy: canvas.height/2 + (wy - head.y) * zoom
+        sx: camX + Math.round(wx * zoom),
+        sy: camY + Math.round(wy * zoom)
     };
 }
 
