@@ -227,7 +227,7 @@ function loop(ts) {
 
         // Max turn per frame shrinks as snake grows:
         // starts at ~4°/frame, halves by length 200
-        const BASE_TURN = 0.07; // radians/frame at size 1
+        const BASE_TURN = 0.18; // radians/frame at size 1
         const maxTurn = BASE_TURN * (BASE_SIZE / segSize) * dt;
 
         // Shortest angular delta (handles 180° wrap)
