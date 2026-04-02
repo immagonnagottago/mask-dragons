@@ -222,10 +222,25 @@ function loop(ts) {
     const dx = mouse.x - cx, dy = mouse.y - cy;
     const dist = Math.sqrt(dx*dx + dy*dy);
     if (dist > 5) {
-        const nx = dx / dist, ny = dy / dist;
-        positions[0].x += nx * SPEED * dt;
-        positions[0].y += ny * SPEED * dt;
-        positions[0].angle = Math.atan2(ny, nx);
+        // Desired angle toward mouse
+        const desiredAngle = Math.atan2(dy, dx);
+
+        // Max turn per frame shrinks as snake grows:
+        // starts at ~4°/frame, halves by length 200
+        const BASE_TURN = 0.07; // radians/frame at size 1
+        const maxTurn = BASE_TURN * (BASE_SIZE / segSize) * dt;
+
+        // Shortest angular delta (handles 180° wrap)
+        let delta = desiredAngle - positions[0].angle;
+        while (delta >  Math.PI) delta -= Math.PI * 2;
+        while (delta < -Math.PI) delta += Math.PI * 2;
+
+        // Clamp turn to max
+        positions[0].angle += Math.max(-maxTurn, Math.min(maxTurn, delta));
+
+        // Move forward in current facing direction
+        positions[0].x += Math.cos(positions[0].angle) * SPEED * dt;
+        positions[0].y += Math.sin(positions[0].angle) * SPEED * dt;
     }
     positions[0].x = Math.max(0, Math.min(WORLD, positions[0].x));
     positions[0].y = Math.max(0, Math.min(WORLD, positions[0].y));
