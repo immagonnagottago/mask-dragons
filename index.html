@@ -5,11 +5,7 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #111; overflow: hidden; width: 100vw; height: 100vh; }
-        #canvas {
-            display: block;
-            image-rendering: pixelated;
-            image-rendering: crisp-edges;
-        }
+        #canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
         #hud {
             position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
             color: #fff; font-family: 'Segoe UI', sans-serif; font-size: 18px;
@@ -22,10 +18,12 @@
 <canvas id="canvas"></canvas>
 <div id="hud">🌸 Nectar: <span id="score">0</span> &nbsp;|&nbsp; Length: <span id="length">12</span></div>
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d', { alpha: false });
+
+// ── Canvas setup ──────────────────────────────────────────────────────────────
+const canvas  = document.getElementById('canvas');
+const ctx     = canvas.getContext('2d', { alpha: false });
 const scoreEl = document.getElementById('score');
-const lengthEl = document.getElementById('length');
+const lengthEl= document.getElementById('length');
 
 function setSize() {
     canvas.width  = window.innerWidth;
@@ -36,15 +34,13 @@ setSize();
 window.addEventListener('resize', setSize);
 
 // ── Sprite loader ─────────────────────────────────────────────────────────────
-// Each sprite is baked into a tiny offscreen canvas at its NATIVE pixel size.
-// Drawing an offscreen canvas onto the main canvas with imageSmoothingEnabled=false
-// forces nearest-neighbor interpolation at every scale — crisp pixels guaranteed.
+// Bake each PNG into an offscreen canvas at native res.
+// Drawing canvas->canvas with imageSmoothingEnabled=false = nearest-neighbor at any scale.
 const sprites = {};
-
 function loadSprite(key, src) {
     const img = new Image();
     img.onload = () => {
-        const oc  = document.createElement('canvas');
+        const oc = document.createElement('canvas');
         oc.width  = img.naturalWidth;
         oc.height = img.naturalHeight;
         const ox  = oc.getContext('2d');
@@ -58,120 +54,14 @@ loadSprite('head', 'head.png');
 loadSprite('body', 'body.png');
 loadSprite('tail', 'tail.png');
 
-// ── World ─────────────────────────────────────────────────────────────────────
-const WORLD = 4000;
-const GRID  = 60;
-
-// ── Snake ─────────────────────────────────────────────────────────────────────
-const BASE_SIZE    = 48;
-const SIZE_PER_EAT = 4;
-let   segSize      = BASE_SIZE;
-let   gap          = segSize * 0.38;
-
-// ── Zoom ─────────────────────────────────────────────────────────────────────
-const ZOOM_START_LENGTH = 50;   // length at which zoom-out begins
-const ZOOM_MIN          = 0.25; // how far it can zoom out max
-let   zoom              = 1.0;  // current zoom (1 = normal, <1 = zoomed out)
-let   targetZoom        = 1.0;
-
-const NUM_START = 12;
-
-// ── Trail-based movement ──────────────────────────────────────────────────────
-// Instead of a physics chain, we record every point the head passes through.
-// Each body segment reads its position from `gap` steps back in that history.
-// This means the whole snake travels the exact same path as the head —
-// segments never lag, loops can't close, and movement feels like classic snake.
-const trail = [];  // ring buffer of {x, y, angle} head positions
-let trailHead = 0; // index of most recent entry
-const MAX_TRAIL = 20000;
-for (let i = 0; i < MAX_TRAIL; i++) trail.push({ x: WORLD/2, y: WORLD/2, angle: 0 });
-
-let numSegments = NUM_START; // total segment count (grows on eat)
-let targetSegments = NUM_START; // grow toward this, one segment per frame
-// positions array still used for drawing — filled from trail each frame
-let positions = [];
-for (let i = 0; i < numSegments; i++)
-    positions.push({ x: WORLD/2, y: WORLD/2, angle: 0 });
-
-// ── Input ─────────────────────────────────────────────────────────────────────
-let mouse = { x: canvas.width/2, y: canvas.height/2 };
-canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-canvas.addEventListener('touchmove', e => {
-    e.preventDefault();
-    mouse.x = e.touches[0].clientX;
-    mouse.y = e.touches[0].clientY;
-}, { passive: false });
-
-// ── Nectar ────────────────────────────────────────────────────────────────────
-const NECTAR_COUNT = 40;
-const NECTAR_R     = 10;
-let   nectars      = [];
-let   score        = 0;
-
-function spawnNectar() {
-    return {
-        x: Math.random() * WORLD,
-        y: Math.random() * WORLD,
-        r: NECTAR_R,
-        hue: Math.random() * 360,
-        pulse: Math.random() * Math.PI * 2
-    };
-}
-for (let i = 0; i < NECTAR_COUNT; i++) nectars.push(spawnNectar());
-
-function eatNectar() {
-    score++;
-    scoreEl.textContent = score;
-    segSize += SIZE_PER_EAT;
-    gap = segSize * 0.38;
-    targetSegments += 2;
-    lengthEl.textContent = targetSegments;
-    // Zoom out proportionally past ZOOM_START_LENGTH
-    const len = positions.length;
-    if (len > ZOOM_START_LENGTH) {
-        const t = (len - ZOOM_START_LENGTH) / 300; // fully zoomed at ~350 length
-        targetZoom = Math.max(ZOOM_MIN, 1 - t * (1 - ZOOM_MIN));
-    }
-}
-
-// ── Camera ────────────────────────────────────────────────────────────────────
-function worldToScreen(wx, wy) {
-    const head = positions[0]; // head is always positions[0]
-    // Snap camera origin to whole pixels — tiles always land on exact boundaries, no jitter
-    const camX = Math.round(canvas.width/2  - head.x * zoom);
-    const camY = Math.round(canvas.height/2 - head.y * zoom);
-    return {
-        sx: camX + Math.round(wx * zoom),
-        sy: camY + Math.round(wy * zoom)
-    };
-}
-
-// ── Seeded RNG (mulberry32) ───────────────────────────────────────────────────
-// Same seed = identical arena every single load, forever.
-function makeRng(seed) {
-    return function() {
-        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-        return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-}
-const TILE_SEED = 0xA2C7E3F1; // fixed forever
-const tileRng   = makeRng(TILE_SEED);
-
-// ── Stone tile variants ───────────────────────────────────────────────────────
-// Each tile is a 16×16 offscreen canvas drawn once at startup.
-// We stamp them tiled across the world — seeded per-cell choice + rotation.
-const TILE_SIZE = 64; // world units per tile (matches GRID)
-const TILE_PX   = 32; // pixel resolution of each tile canvas
-
-// ── Load your tile PNGs and bake rotations ───────────────────────────────────
+// ── Tile loader ───────────────────────────────────────────────────────────────
+const TILE_SIZE    = 64;   // world units per tile
+const TILE_PX      = 32;   // native pixel size of tile PNGs
 const NUM_VARIANTS = 6;
-const tileCanvases = [];
-let tilesLoaded = 0;
+const tileCanvases = [];   // tileCanvases[variant][rotation 0-3]
 
 for (let v = 0; v < NUM_VARIANTS; v++) {
-    tileCanvases[v] = new Array(4).fill(null);
+    tileCanvases[v] = [null, null, null, null];
     const img = new Image();
     img.onload = () => {
         for (let r = 0; r < 4; r++) {
@@ -188,77 +78,134 @@ for (let v = 0; v < NUM_VARIANTS; v++) {
             }
             tileCanvases[v][r] = oc;
         }
-        tilesLoaded++;
     };
     img.src = `tile${v}.png`;
 }
 
-// ── Per-cell tile assignment (seeded, fixed forever) ─────────────────────────
-const COLS = Math.ceil(WORLD / TILE_SIZE);
-const ROWS = Math.ceil(WORLD / TILE_SIZE);
-const tileMap = new Uint8Array(COLS * ROWS); // packed: variant*4 + rotation
+// ── Seeded tile map (fixed forever) ──────────────────────────────────────────
+function makeRng(seed) {
+    return () => {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+}
+const rng  = makeRng(0xA2C7E3F1);
+const COLS = Math.ceil(4000 / TILE_SIZE);
+const ROWS = Math.ceil(4000 / TILE_SIZE);
+const tileMap = new Uint8Array(COLS * ROWS);
 for (let i = 0; i < tileMap.length; i++) {
-    const v = Math.floor(tileRng() * NUM_VARIANTS);
-    const r = Math.floor(tileRng() * 4);
+    const v = Math.floor(rng() * NUM_VARIANTS);
+    const r = Math.floor(rng() * 4);
     tileMap[i] = v * 4 + r;
 }
 
-// ── Draw arena ────────────────────────────────────────────────────────────────
-function drawGrid() {
-    const head = positions[0];
+// ── World constants ───────────────────────────────────────────────────────────
+const WORLD  = 4000;
+const SPEED  = 4;     // world units per frame at 60fps
+
+// ── Snake constants ───────────────────────────────────────────────────────────
+const BASE_SIZE    = 48;
+const SIZE_PER_EAT = 4;
+let   segSize      = BASE_SIZE;
+let   gap          = segSize * 0.38;
+
+// ── Trail ring buffer ─────────────────────────────────────────────────────────
+// Head writes here every frame. Segments read N steps back.
+// This is the sole source of truth for body positions.
+const MAX_TRAIL = 20000;
+const trailX   = new Float32Array(MAX_TRAIL);
+const trailY   = new Float32Array(MAX_TRAIL);
+const trailA   = new Float32Array(MAX_TRAIL); // angle
+let   trailHead = 0;
+let   trailFull = false; // true once ring buffer has been written all the way around
+
+// Initialize trail to start position
+trailX.fill(WORLD/2);
+trailY.fill(WORLD/2);
+
+// ── Snake state ───────────────────────────────────────────────────────────────
+const START_SEGS = 12;
+let numSegs    = START_SEGS;   // current visible segment count
+let targetSegs = START_SEGS;  // target — grows when you eat
+let headX = WORLD/2, headY = WORLD/2, headAngle = 0;
+
+// ── Zoom ──────────────────────────────────────────────────────────────────────
+const ZOOM_START = 50;
+const ZOOM_MIN   = 0.25;
+let   zoom       = 1.0;
+let   zoomTarget = 1.0;
+
+// ── Input ─────────────────────────────────────────────────────────────────────
+let mouseX = canvas.width/2, mouseY = canvas.height/2;
+canvas.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
+canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    mouseX = e.touches[0].clientX;
+    mouseY = e.touches[0].clientY;
+}, { passive: false });
+
+// ── Nectar ────────────────────────────────────────────────────────────────────
+const NECTAR_COUNT = 40;
+let nectars = [];
+let score   = 0;
+
+function spawnNectar() {
+    return { x: Math.random()*WORLD, y: Math.random()*WORLD,
+             r: 10, hue: Math.random()*360, pulse: Math.random()*Math.PI*2 };
+}
+for (let i = 0; i < NECTAR_COUNT; i++) nectars.push(spawnNectar());
+
+function eatNectar() {
+    score++;
+    scoreEl.textContent = score;
+    segSize += SIZE_PER_EAT;
+    gap = segSize * 0.38;
+    targetSegs += 2;
+    // update zoom target
+    if (targetSegs > ZOOM_START) {
+        const t = (targetSegs - ZOOM_START) / 300;
+        zoomTarget = Math.max(ZOOM_MIN, 1 - t * (1 - ZOOM_MIN));
+    }
+    lengthEl.textContent = targetSegs;
+}
+
+// ── Camera ────────────────────────────────────────────────────────────────────
+function worldToScreen(wx, wy) {
+    const camX = Math.round(canvas.width/2  - headX * zoom);
+    const camY = Math.round(canvas.height/2 - headY * zoom);
+    return { sx: camX + Math.round(wx * zoom), sy: camY + Math.round(wy * zoom) };
+}
+
+// ── Draw tile floor ───────────────────────────────────────────────────────────
+function drawFloor() {
     const scaledTile = TILE_SIZE * zoom;
-
-    // World pixel of top-left screen corner
-    const viewLeft = head.x - canvas.width  / (2 * zoom);
-    const viewTop  = head.y - canvas.height / (2 * zoom);
-
-    // First tile col/row visible
+    const viewLeft = headX - canvas.width  / (2 * zoom);
+    const viewTop  = headY - canvas.height / (2 * zoom);
     const colStart = Math.max(0, Math.floor(viewLeft / TILE_SIZE));
     const rowStart = Math.max(0, Math.floor(viewTop  / TILE_SIZE));
     const colEnd   = Math.min(COLS-1, Math.ceil((viewLeft + canvas.width  / zoom) / TILE_SIZE));
     const rowEnd   = Math.min(ROWS-1, Math.ceil((viewTop  + canvas.height / zoom) / TILE_SIZE));
 
+    ctx.imageSmoothingEnabled = false;
     for (let row = rowStart; row <= rowEnd; row++) {
         for (let col = colStart; col <= colEnd; col++) {
             const packed = tileMap[row * COLS + col];
-            const v = Math.floor(packed / 4);
-            const r = packed % 4;
-            const tc = tileCanvases[v][r];
+            const tc = tileCanvases[packed >> 2][packed & 3];
             const { sx, sy } = worldToScreen(col * TILE_SIZE, row * TILE_SIZE);
-            ctx.imageSmoothingEnabled = false;
-            if (tc) {
-                ctx.drawImage(tc, Math.floor(sx), Math.floor(sy),
-                              Math.ceil(scaledTile) + 1, Math.ceil(scaledTile) + 1);
-            } else {
-                // Tile not loaded yet — fill with dark stone colour
-                ctx.fillStyle = '#3a3328';
-                ctx.fillRect(Math.floor(sx), Math.floor(sy),
-                             Math.ceil(scaledTile) + 1, Math.ceil(scaledTile) + 1);
-            }
+            const w = Math.ceil(scaledTile) + 1;
+            if (tc) ctx.drawImage(tc, sx, sy, w, w);
+            else { ctx.fillStyle = '#3a3328'; ctx.fillRect(sx, sy, w, w); }
         }
     }
 
     // World border
     const tl = worldToScreen(0, 0);
     const br = worldToScreen(WORLD, WORLD);
-    ctx.strokeStyle = 'rgba(255,80,80,0.4)';
+    ctx.strokeStyle = 'rgba(255,80,80,0.5)';
     ctx.lineWidth = 3;
     ctx.strokeRect(tl.sx, tl.sy, br.sx - tl.sx, br.sy - tl.sy);
-}
-
-// ── Draw segment ──────────────────────────────────────────────────────────────
-function drawSegment(spriteKey, wx, wy, angle, size) {
-    const spr = sprites[spriteKey];
-    if (!spr) return;
-    const { sx, sy } = worldToScreen(wx, wy);
-    const s = Math.round(size * zoom);
-
-    ctx.save();
-    ctx.translate(Math.round(sx), Math.round(sy));
-    ctx.rotate(angle);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(spr, -s/2, -s/2, s, s);
-    ctx.restore();
 }
 
 // ── Draw nectar ───────────────────────────────────────────────────────────────
@@ -267,87 +214,70 @@ function drawNectar(n) {
     if (sx < -40 || sx > canvas.width+40 || sy < -40 || sy > canvas.height+40) return;
     n.pulse += 0.05;
     const r = n.r + Math.sin(n.pulse) * 3;
-    const grd = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 2.5);
+    const grd = ctx.createRadialGradient(sx, sy, 0, sx, sy, r*2.5);
     grd.addColorStop(0, `hsla(${n.hue},100%,80%,1)`);
     grd.addColorStop(1, `hsla(${n.hue},100%,50%,0)`);
-    ctx.beginPath();
-    ctx.arc(sx, sy, r * 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = grd;
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(sx, sy, r, 0, Math.PI * 2);
-    ctx.fillStyle = `hsl(${n.hue},100%,75%)`;
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(sx, sy, r*2.5, 0, Math.PI*2);
+    ctx.fillStyle = grd; ctx.fill();
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI*2);
+    ctx.fillStyle = `hsl(${n.hue},100%,75%)`; ctx.fill();
+}
+
+// ── Draw segment ──────────────────────────────────────────────────────────────
+function drawSegment(key, wx, wy, angle, size) {
+    const spr = sprites[key];
+    if (!spr) return;
+    const { sx, sy } = worldToScreen(wx, wy);
+    const s = Math.round(size * zoom);
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(angle);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(spr, -s/2, -s/2, s, s);
+    ctx.restore();
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
-const SPEED = 4; // world units per frame at 60fps
-let lastTime = 0;
+let lastTs = 0;
 function loop(ts) {
-    // Hard-cap dt to 1 frame — prevents snake teleporting after tab switches or GC pauses
-    const dt = lastTime === 0 ? 1 : Math.min((ts - lastTime) / 16.67, 1);
-    lastTime = ts;
+    const dt = lastTs === 0 ? 1 : Math.min((ts - lastTs) / 16.67, 1);
+    lastTs = ts;
 
-    // Smoothly lerp zoom toward target
-    zoom += (targetZoom - zoom) * 0.05;
+    // Zoom lerp
+    zoom += (zoomTarget - zoom) * 0.05;
 
-    // ── Move head ──
+    // ── Steer head ──
     const cx = canvas.width/2, cy = canvas.height/2;
-    const dx = mouse.x - cx, dy = mouse.y - cy;
+    const dx = mouseX - cx, dy = mouseY - cy;
     const dist = Math.sqrt(dx*dx + dy*dy);
     if (dist > 5) {
-        // Desired angle toward mouse
-        const desiredAngle = Math.atan2(dy, dx);
-
-        // Tightest loop radius = 1.5× gap (just wider than snake body in world units)
-        // maxTurn = SPEED / turnRadius — scales with size automatically via gap
-        const turnRadius = gap * 0.4;
-        const maxTurn = SPEED / turnRadius; // fixed per frame, not dt-scaled
-
-        // Shortest angular delta (handles 180° wrap)
-        let delta = desiredAngle - positions[0].angle;
-        while (delta >  Math.PI) delta -= Math.PI * 2;
-        while (delta < -Math.PI) delta += Math.PI * 2;
-
-        // Clamp turn to max
-        positions[0].angle += Math.max(-maxTurn, Math.min(maxTurn, delta));
-
-        // Move forward in current facing direction
-        positions[0].x += Math.cos(positions[0].angle) * SPEED * dt;
-        positions[0].y += Math.sin(positions[0].angle) * SPEED * dt;
+        const desired = Math.atan2(dy, dx);
+        const maxTurn = SPEED / (gap * 0.4);
+        let delta = desired - headAngle;
+        while (delta >  Math.PI) delta -= Math.PI*2;
+        while (delta < -Math.PI) delta += Math.PI*2;
+        headAngle += Math.max(-maxTurn, Math.min(maxTurn, delta)) * dt;
     }
-    positions[0].x = Math.max(0, Math.min(WORLD, positions[0].x));
-    positions[0].y = Math.max(0, Math.min(WORLD, positions[0].y));
+    headX = Math.max(0, Math.min(WORLD, headX + Math.cos(headAngle) * SPEED * dt));
+    headY = Math.max(0, Math.min(WORLD, headY + Math.sin(headAngle) * SPEED * dt));
 
-    // ── Record head into trail ring buffer ──
+    // ── Write head to trail ──
     trailHead = (trailHead + 1) % MAX_TRAIL;
-    trail[trailHead].x     = positions[0].x;
-    trail[trailHead].y     = positions[0].y;
-    trail[trailHead].angle = positions[0].angle;
+    trailX[trailHead] = headX;
+    trailY[trailHead] = headY;
+    trailA[trailHead] = headAngle;
 
-    const SAMPLES_PER_SEG = Math.max(1, Math.round(gap / SPEED));
+    // ── Grow one segment per frame if needed ──
+    // No positions array — just increment numSegs.
+    // The trail already contains the right data; the draw loop reads it directly.
+    if (numSegs < targetSegs) numSegs++;
 
-    // ── Grow one segment per frame toward targetSegments ──
-    if (numSegments < targetSegments) {
-        const t = positions[numSegments - 1];
-        positions.push({ x: t.x, y: t.y, angle: t.angle });
-        numSegments++;
-    }
-
-    // ── Place each segment at its fixed distance back along the trail ──
-    for (let i = 1; i < numSegments; i++) {
-        const idx = ((trailHead - i * SAMPLES_PER_SEG) % MAX_TRAIL + MAX_TRAIL) % MAX_TRAIL;
-        positions[i].x     = trail[idx].x;
-        positions[i].y     = trail[idx].y;
-        positions[i].angle = trail[idx].angle;
-    }
-
-    const head = positions[0]; // head is always positions[0]
+    // ── Nectar collision ──
     const eatR = segSize * 0.5;
-    for (let i = nectars.length - 1; i >= 0; i--) {
+    for (let i = nectars.length-1; i >= 0; i--) {
         const n = nectars[i];
-        const edx = head.x - n.x, edy = head.y - n.y;
-        if (Math.sqrt(edx*edx + edy*edy) < eatR + n.r) {
+        const ex = headX - n.x, ey = headY - n.y;
+        if (ex*ex + ey*ey < (eatR + n.r) * (eatR + n.r)) {
             nectars.splice(i, 1);
             eatNectar();
             nectars.push(spawnNectar());
@@ -358,27 +288,29 @@ function loop(ts) {
     ctx.fillStyle = '#141414';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    drawGrid();
-    nectars.forEach(n => drawNectar(n));
+    drawFloor();
+    nectars.forEach(drawNectar);
 
-    const total = numSegments;
-    for (let i = total - 1; i >= 0; i--) {
-        const p = positions[i];
-        let key, sz;
-        if (i === 0)            { key = 'head'; sz = segSize * 1.15; }
-        else if (i === total-1) { key = 'tail'; sz = segSize * 0.75; }
-        else                    { key = 'body'; sz = segSize; }
-        drawSegment(key, p.x, p.y, p.angle, sz);
+    // Segments: draw tail→body→head (back to front)
+    // Each segment i reads from trail[trailHead - i*sps]
+    const sps = Math.max(1, Math.round(gap / SPEED));
+    for (let i = numSegs-1; i >= 0; i--) {
+        let wx, wy, wa;
+        if (i === 0) {
+            wx = headX; wy = headY; wa = headAngle;
+        } else {
+            const idx = ((trailHead - i * sps) % MAX_TRAIL + MAX_TRAIL) % MAX_TRAIL;
+            wx = trailX[idx]; wy = trailY[idx]; wa = trailA[idx];
+        }
+        const key = i === 0 ? 'head' : i === numSegs-1 ? 'tail' : 'body';
+        const sz  = i === 0 ? segSize*1.15 : i === numSegs-1 ? segSize*0.75 : segSize;
+        drawSegment(key, wx, wy, wa, sz);
     }
 
-    requestAnimationFrame(safeLoop);
+    requestAnimationFrame(loop);
 }
+requestAnimationFrame(loop);
 
-function safeLoop(ts) {
-    try { loop(ts); } catch(e) { console.error(e); }
-    requestAnimationFrame(safeLoop);
-}
-requestAnimationFrame(safeLoop);
 </script>
 </body>
 </html>
