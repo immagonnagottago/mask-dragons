@@ -68,6 +68,12 @@ const SIZE_PER_EAT = 4;
 let   segSize      = BASE_SIZE;
 let   gap          = segSize * 0.38;
 
+// ── Zoom ─────────────────────────────────────────────────────────────────────
+const ZOOM_START_LENGTH = 50;   // length at which zoom-out begins
+const ZOOM_MIN          = 0.25; // how far it can zoom out max
+let   zoom              = 1.0;  // current zoom (1 = normal, <1 = zoomed out)
+let   targetZoom        = 1.0;
+
 const NUM_START = 12;
 let positions = [];
 for (let i = 0; i < NUM_START; i++)
@@ -108,34 +114,40 @@ function eatNectar() {
     positions.push({ x: tail.x, y: tail.y, angle: tail.angle });
     positions.push({ x: tail.x, y: tail.y, angle: tail.angle });
     lengthEl.textContent = positions.length;
+    // Zoom out proportionally past ZOOM_START_LENGTH
+    const len = positions.length;
+    if (len > ZOOM_START_LENGTH) {
+        const t = (len - ZOOM_START_LENGTH) / 300; // fully zoomed at ~350 length
+        targetZoom = Math.max(ZOOM_MIN, 1 - t * (1 - ZOOM_MIN));
+    }
 }
 
 // ── Camera ────────────────────────────────────────────────────────────────────
 function worldToScreen(wx, wy) {
     const head = positions[0];
     return {
-        sx: canvas.width/2  + (wx - head.x),
-        sy: canvas.height/2 + (wy - head.y)
+        sx: canvas.width/2  + (wx - head.x) * zoom,
+        sy: canvas.height/2 + (wy - head.y) * zoom
     };
 }
 
 // ── Draw grid ─────────────────────────────────────────────────────────────────
 function drawGrid() {
     const head = positions[0];
-    const offX = canvas.width/2  - head.x;
-    const offY = canvas.height/2 - head.y;
-    const startWX = Math.floor(-offX / GRID) * GRID;
-    const startWY = Math.floor(-offY / GRID) * GRID;
+    const scaledGrid = GRID * zoom;
+    // Screen offset of world origin
+    const originSX = canvas.width/2  - head.x * zoom;
+    const originSY = canvas.height/2 - head.y * zoom;
+    const startSX = ((originSX % scaledGrid) + scaledGrid) % scaledGrid;
+    const startSY = ((originSY % scaledGrid) + scaledGrid) % scaledGrid;
 
     ctx.strokeStyle = 'rgba(255,255,255,0.07)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let wx = startWX; wx < -offX + canvas.width + GRID; wx += GRID) {
-        const sx = wx + offX;
+    for (let sx = startSX; sx < canvas.width + scaledGrid; sx += scaledGrid) {
         ctx.moveTo(sx, 0); ctx.lineTo(sx, canvas.height);
     }
-    for (let wy = startWY; wy < -offY + canvas.height + GRID; wy += GRID) {
-        const sy = wy + offY;
+    for (let sy = startSY; sy < canvas.height + scaledGrid; sy += scaledGrid) {
         ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy);
     }
     ctx.stroke();
@@ -152,12 +164,12 @@ function drawSegment(spriteKey, wx, wy, angle, size) {
     const spr = sprites[spriteKey];
     if (!spr) return;
     const { sx, sy } = worldToScreen(wx, wy);
-    const s = Math.round(size);
+    const s = Math.round(size * zoom);
 
     ctx.save();
     ctx.translate(Math.round(sx), Math.round(sy));
     ctx.rotate(angle);
-    ctx.imageSmoothingEnabled = false;   // re-assert inside save/restore
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(spr, -s/2, -s/2, s, s);
     ctx.restore();
 }
@@ -188,6 +200,9 @@ function loop(ts) {
     // Hard-cap dt to 1 frame — prevents snake teleporting after tab switches or GC pauses
     const dt = lastTime === 0 ? 1 : Math.min((ts - lastTime) / 16.67, 1);
     lastTime = ts;
+
+    // Smoothly lerp zoom toward target
+    zoom += (targetZoom - zoom) * 0.05;
 
     // Move head at fixed speed in direction of mouse from screen centre
     const cx = canvas.width/2, cy = canvas.height/2;
