@@ -131,7 +131,7 @@ function eatNectar() {
     positions.push({ x: tail.x, y: tail.y, angle: tail.angle });
     positions.push({ x: tail.x, y: tail.y, angle: tail.angle });
     numSegments += 2;
-    lengthEl.textContent = numSegments + pendingGrowth;
+    lengthEl.textContent = numSegments;
     // Zoom out proportionally past ZOOM_START_LENGTH
     const len = positions.length;
     if (len > ZOOM_START_LENGTH) {
@@ -336,9 +336,13 @@ function loop(ts) {
     // ── Place each segment at its fixed distance back along the trail ──
     // tailDebt offsets every segment's trail lookup equally, holding the whole
     // tail end back. It drains 1 per frame so the tail catches up gradually.
+    // tailDebt holds the tail back — all segments beyond the original length
+    // read from the same clamped index as the tail, so they sit still while debt drains.
+    const tailIdx = ((trailHead - (numSegments - 1) * SAMPLES_PER_SEG) % MAX_TRAIL + MAX_TRAIL) % MAX_TRAIL;
     for (let i = 1; i < numSegments; i++) {
-        const debt = i >= numSegments - 2 ? tailDebt : 0;
-        const idx = ((trailHead - i * SAMPLES_PER_SEG - debt) % MAX_TRAIL + MAX_TRAIL) % MAX_TRAIL;
+        const naturalIdx = ((trailHead - i * SAMPLES_PER_SEG + tailDebt) % MAX_TRAIL + MAX_TRAIL) % MAX_TRAIL;
+        // Clamp so tail segments never read further back than the tail
+        const idx = tailDebt > 0 && i > numSegments - 3 ? tailIdx : naturalIdx;
         positions[i].x     = trail[idx].x;
         positions[i].y     = trail[idx].y;
         positions[i].angle = trail[idx].angle;
