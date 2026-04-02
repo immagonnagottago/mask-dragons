@@ -124,11 +124,12 @@ function eatNectar() {
     scoreEl.textContent = score;
     segSize += SIZE_PER_EAT;
     gap = segSize * 0.38;
-    // Add segments immediately; hold tail back by 2 segment-lengths worth of samples
+    // Add segments at current tail position so they don't flash from world origin
     const sps = Math.max(1, Math.round(gap / SPEED));
     tailDebt += 2 * sps;
-    positions.push({ x: 0, y: 0, angle: 0 });
-    positions.push({ x: 0, y: 0, angle: 0 });
+    const tail = positions[numSegments - 1];
+    positions.push({ x: tail.x, y: tail.y, angle: tail.angle });
+    positions.push({ x: tail.x, y: tail.y, angle: tail.angle });
     numSegments += 2;
     lengthEl.textContent = numSegments + pendingGrowth;
     // Zoom out proportionally past ZOOM_START_LENGTH
