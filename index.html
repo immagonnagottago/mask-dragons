@@ -87,6 +87,7 @@ const MAX_TRAIL = 20000;
 for (let i = 0; i < MAX_TRAIL; i++) trail.push({ x: WORLD/2, y: WORLD/2, angle: 0 });
 
 let numSegments = NUM_START; // total segment count (grows on eat)
+let pendingGrowth = 0;        // segments queued to grow in smoothly
 // positions array still used for drawing — filled from trail each frame
 let positions = [];
 for (let i = 0; i < numSegments; i++)
@@ -123,10 +124,8 @@ function eatNectar() {
     scoreEl.textContent = score;
     segSize += SIZE_PER_EAT;
     gap = segSize * 0.38;
-    numSegments += 2;
-    positions.push({ x: 0, y: 0, angle: 0 });
-    positions.push({ x: 0, y: 0, angle: 0 });
-    lengthEl.textContent = numSegments;
+    pendingGrowth += 2; // queue 2 segments — they'll appear naturally at the tail
+    lengthEl.textContent = numSegments + pendingGrowth;
     // Zoom out proportionally past ZOOM_START_LENGTH
     const len = positions.length;
     if (len > ZOOM_START_LENGTH) {
@@ -323,11 +322,16 @@ function loop(ts) {
     trail[trailHead].y     = positions[0].y;
     trail[trailHead].angle = positions[0].angle;
 
-    // ── Place each segment at its fixed distance back along the trail ──
-    // gap is in world units; trail stores one entry per frame, so we step
-    // back by however many frames equal `gap` world units of travel.
-    // We accumulate distance along the trail to find the right sample point.
     const SAMPLES_PER_SEG = Math.max(1, Math.round(gap / SPEED));
+
+    // ── Grow tail naturally — one segment per frame from queue ──
+    if (pendingGrowth > 0) {
+        positions.push({ x: 0, y: 0, angle: 0 });
+        numSegments++;
+        pendingGrowth--;
+    }
+
+    // ── Place each segment at its fixed distance back along the trail ──
     for (let i = 1; i < numSegments; i++) {
         const idx = ((trailHead - i * SAMPLES_PER_SEG) % MAX_TRAIL + MAX_TRAIL) % MAX_TRAIL;
         positions[i].x     = trail[idx].x;
