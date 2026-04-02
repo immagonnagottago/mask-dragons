@@ -163,95 +163,32 @@ const tileRng   = makeRng(TILE_SEED);
 const TILE_SIZE = 64; // world units per tile (matches GRID)
 const TILE_PX   = 32; // pixel resolution of each tile canvas
 
-// Palette: dark stone with variation
-const STONE_PALETTES = [
-    // base, crack, highlight, mortar
-    ['#3a3328','#2a241c','#4a4438','#1e1a14'],
-    ['#3d3530','#2d2820','#4d453e','#201c18'],
-    ['#363030','#26211c','#46403a','#1c1814'],
-    ['#3a3530','#2a2620','#4a443e','#201c16'],
-];
-
-function drawTileToCanvas(variant, rotation) {
-    const oc = document.createElement('canvas');
-    oc.width = oc.height = TILE_PX;
-    const ox = oc.getContext('2d');
-    ox.imageSmoothingEnabled = false;
-
-    const pal = STONE_PALETTES[variant % STONE_PALETTES.length];
-    const P = TILE_PX;
-
-    // Base stone fill
-    ox.fillStyle = pal[0];
-    ox.fillRect(0, 0, P, P);
-
-    // Mortar border (2px)
-    ox.fillStyle = pal[3];
-    ox.fillRect(0, 0, P, 2);
-    ox.fillRect(0, P-2, P, 2);
-    ox.fillRect(0, 0, 2, P);
-    ox.fillRect(P-2, 0, 2, P);
-
-    // Inner bevel highlight (top-left)
-    ox.fillStyle = pal[2];
-    ox.fillRect(2, 2, P-4, 2);
-    ox.fillRect(2, 2, 2, P-4);
-
-    // Inner shadow (bottom-right)
-    ox.fillStyle = pal[1];
-    ox.fillRect(2, P-4, P-4, 2);
-    ox.fillRect(P-4, 2, 2, P-4);
-
-    // Variant-specific surface detail
-    ox.fillStyle = pal[1];
-    if (variant === 0) {
-        // Diagonal crack
-        for (let i = 4; i < P-4; i++) {
-            ox.fillRect(i, 4 + Math.floor(i * 0.5) % (P-8), 1, 1);
-        }
-    } else if (variant === 1) {
-        // Horizontal crack
-        ox.fillRect(4, Math.floor(P/2), P-8, 1);
-        ox.fillRect(6, Math.floor(P/2)+1, P-12, 1);
-    } else if (variant === 2) {
-        // Two short cracks
-        ox.fillRect(4, 8, 8, 1);
-        ox.fillRect(P-12, P-10, 8, 1);
-    } else if (variant === 3) {
-        // Pitted surface dots
-        for (let i = 0; i < 5; i++) {
-            const px = 5 + (i * 7) % (P-10);
-            const py = 5 + (i * 11) % (P-10);
-            ox.fillRect(px, py, 2, 2);
-        }
-    } else if (variant === 4) {
-        // Cross crack
-        ox.fillRect(Math.floor(P/2), 4, 1, P-8);
-        ox.fillRect(4, Math.floor(P/2), P-8, 1);
-    } else {
-        // Clean stone (no detail)
-    }
-
-    // Rotate canvas if needed
-    if (rotation === 0) return oc;
-    const rc = document.createElement('canvas');
-    rc.width = rc.height = TILE_PX;
-    const rx = rc.getContext('2d');
-    rx.imageSmoothingEnabled = false;
-    rx.translate(TILE_PX/2, TILE_PX/2);
-    rx.rotate(rotation * Math.PI/2);
-    rx.drawImage(oc, -TILE_PX/2, -TILE_PX/2);
-    return rc;
-}
-
-// Pre-bake all variant×rotation combos (6 variants × 4 rotations = 24 canvases)
+// ── Load your tile PNGs and bake rotations ───────────────────────────────────
 const NUM_VARIANTS = 6;
 const tileCanvases = [];
+let tilesLoaded = 0;
+
 for (let v = 0; v < NUM_VARIANTS; v++) {
-    tileCanvases[v] = [];
-    for (let r = 0; r < 4; r++) {
-        tileCanvases[v][r] = drawTileToCanvas(v, r);
-    }
+    tileCanvases[v] = new Array(4).fill(null);
+    const img = new Image();
+    img.onload = () => {
+        for (let r = 0; r < 4; r++) {
+            const oc = document.createElement('canvas');
+            oc.width = oc.height = TILE_PX;
+            const ox = oc.getContext('2d');
+            ox.imageSmoothingEnabled = false;
+            if (r === 0) {
+                ox.drawImage(img, 0, 0, TILE_PX, TILE_PX);
+            } else {
+                ox.translate(TILE_PX/2, TILE_PX/2);
+                ox.rotate(r * Math.PI/2);
+                ox.drawImage(img, -TILE_PX/2, -TILE_PX/2, TILE_PX, TILE_PX);
+            }
+            tileCanvases[v][r] = oc;
+        }
+        tilesLoaded++;
+    };
+    img.src = `tile${v}.png`;
 }
 
 // ── Per-cell tile assignment (seeded, fixed forever) ─────────────────────────
